@@ -183,7 +183,8 @@ class PostProcessor :
 
             # process events, if needed
             if not fullClone:
-                eventRange = range(self.firstEntry, self.firstEntry + nEntries) if nEntries > 0 and not elist else None
+                eventRange = xrange(self.firstEntry, self.firstEntry + nEntries) if nEntries > 0 and not elist else None
+
                 (nall, npass, timeLoop) = eventLoop(self.modules, inFile, outFile, inTree, outTree, eventRange=eventRange, maxEvents=self.maxEntries)
                 print('Processed %d preselected entries from %s (%s entries). Finally selected %d entries' % (nall, fname, nEntries, npass))
             else:

@@ -2,7 +2,7 @@ import types
 import ROOT
 ROOT.PyConfig.IgnoreCommandLineOptions = True
 
-def InputTree(tree,entrylist=ROOT.nullptr):
+def InputTree(tree,entrylist=None):
     """add to the PyROOT wrapper of a TTree a TTreeReader and methods readBranch, arrayReader, valueReader""" 
     if hasattr(tree, '_ttreereader'): return tree # don't initialize twice
     tree.entry = -1
@@ -92,7 +92,7 @@ def _makeValueReader(tree, typ, nam):
     return tree._ttrvs[nam]
 
 def _remakeAllReaders(tree):
-    _ttreereader = ROOT.TTreeReader(tree, getattr(tree, '_entrylist', ROOT.nullptr))
+    _ttreereader = ROOT.TTreeReader(tree, getattr(tree, '_entrylist', None))
     _ttreereader._isClean = True
     _ttrvs = {}
     for k in tree._ttrvs.keys():
