@@ -7,7 +7,38 @@ ROOT.PyConfig.IgnoreCommandLineOptions = True
 from PhysicsTools.NanoAODTools.postprocessing.framework.datamodel import Collection
 from PhysicsTools.NanoAODTools.postprocessing.framework.eventloop import Module
 
-def is_relevant_syst_for_shape_corr(flavor_btv, syst, jesSystsForShape=["jes"]):
+jesComponents = [
+    "AbsoluteMPFBias",
+    "AbsoluteScale"  ,
+    "AbsoluteStat"   ,
+    "FlavorQCD"      ,
+    "Fragmentation"  ,
+    "PileUpDataMC"   ,
+    "PileUpPtBB"     ,
+    "PileUpPtEC1"    ,
+    "PileUpPtEC2"    ,
+    "PileUpPtHF"     ,
+    "PileUpPtRef"    ,
+    "RelativeFSR"    ,
+    "RelativeJEREC1" ,
+    "RelativeJEREC2" ,
+    "RelativeJERHF"  ,
+    "RelativePtBB"   ,
+    "RelativePtEC1"  ,
+    "RelativePtEC2"  ,
+    "RelativePtHF"   ,
+    "RelativeBal"    ,
+    #"RelativeSample" , not there...
+    "RelativeStatEC" ,
+    "RelativeStatFSR",
+    "RelativeStatHF" ,
+    "SinglePionECAL" ,
+    "SinglePionHCAL" ,
+    "TimePtEta"      ,    
+]
+
+
+def is_relevant_syst_for_shape_corr(flavor_btv, syst):
     """Returns true if a flavor/syst combination is relevant"""
     jesSysts = list(chain(*[ ("up_" + j, "down_" + j) for j in jesSystsForShape ]))
 
@@ -15,7 +46,8 @@ def is_relevant_syst_for_shape_corr(flavor_btv, syst, jesSystsForShape=["jes"]):
         return syst in [ "central",
                          "up_lf", "down_lf",
                          "up_hfstats1", "down_hfstats1",
-                         "up_hfstats2", "down_hfstats2" ] + jesSysts
+                         "up_hfstats2", "down_hfstats2" ] + \
+            [ 'up_jes%s'%x for x in jesComponents]  + [ 'down_jes%s'%x for x in jesComponents]
     elif flavor_btv == 1:
         return syst in [ "central",
                          "up_cferr1", "down_cferr1",
@@ -24,7 +56,8 @@ def is_relevant_syst_for_shape_corr(flavor_btv, syst, jesSystsForShape=["jes"]):
         return syst in [ "central",
                          "up_hf", "down_hf",
                          "up_lfstats1", "down_lfstats1",
-                         "up_lfstats2", "down_lfstats2" ] + jesSysts
+                         "up_lfstats2", "down_lfstats2" ] + \
+            [ 'up_jes%s'%x for x in jesComponents]  + [ 'down_jes%s'%x for x in jesComponents]
     else:
         raise ValueError("ERROR: Undefined flavor = %i!!" % flavor_btv)
     return True
@@ -32,18 +65,17 @@ def is_relevant_syst_for_shape_corr(flavor_btv, syst, jesSystsForShape=["jes"]):
 class btagSFProducer(Module):
     """Calculate btagging scale factors
     """
-    def __init__(self, era, algo='csvv2', selectedWPs=['M', 'shape_corr'], sfFileName=None, verbose=0, jesSystsForShape=["jes"]):
+    def __init__(self, era, algo = 'csvv2', sfFileName = None, verbose = 0, collName='Jet',storeOutput=True, perJesComponents=False):
 
         self.era = era
         self.algo = algo.lower()
-        self.selectedWPs = selectedWPs
+        self.perJesComponents = perJesComponents
         self.verbose = verbose
-        self.jesSystsForShape = jesSystsForShape
-
+        self.collName = collName
+        self.storeOutput = storeOutput
         # CV: Return value of BTagCalibrationReader::eval_auto_bounds() is zero
         #     in case jet abs(eta) > 2.4 !!
         self.max_abs_eta = 2.4
-
         # define measurement type for each flavor
         self.inputFilePath = os.environ['CMSSW_BASE'] + "/src/PhysicsTools/NanoAODTools/data/btagSF/"
         self.inputFileName = sfFileName
@@ -176,27 +208,25 @@ class btagSFProducer(Module):
         for syst in [ 'lf', 'hf',
                       'hfstats1', 'hfstats2',
                       'lfstats1', 'lfstats2',
-                      'cferr1', 'cferr2' ] + self.jesSystsForShape:
+                      'cferr1', 'cferr2' ] + (['jes'] if not self.perJesComponents else [ 'jes%s'%x for x in jesComponents]):
             self.systs_shape_corr.append("up_%s" % syst)
             self.systs_shape_corr.append("down_%s" % syst)
         self.central_and_systs_shape_corr = [ "central" ]
         self.central_and_systs_shape_corr.extend(self.systs_shape_corr)
 
         self.branchNames_central_and_systs = {}
-        for wp in self.selectedWPs:
-            branchNames = {}
-            if wp == 'shape_corr':
-                central_and_systs = self.central_and_systs_shape_corr
-                baseBranchName = 'Jet_btagSF_{}_shape'.format(self.algo)
+        for central_or_syst in self.central_and_systs:
+            if central_or_syst == "central":
+                self.branchNames_central_and_systs[central_or_syst] = "%s_btagSF"%self.collName
             else:
-                central_and_systs = self.central_and_systs
-                baseBranchName = 'Jet_btagSF_{}_{}'.format(self.algo, wp)
-            for central_or_syst in central_and_systs:
-                if central_or_syst == "central":
-                    branchNames[central_or_syst] = baseBranchName
-                else:
-                    branchNames[central_or_syst] = baseBranchName + '_' + central_or_syst
-            self.branchNames_central_and_systs[wp] = branchNames
+                self.branchNames_central_and_systs[central_or_syst] = "%s_btagSF_%s" %(self.collName, central_or_syst)
+
+        self.branchNames_central_and_systs_shape_corr = {}
+        for central_or_syst in self.central_and_systs_shape_corr:
+            if central_or_syst == "central":
+                self.branchNames_central_and_systs_shape_corr[central_or_syst] = "%s_btagSF_shape"%self.collName
+            else:
+                self.branchNames_central_and_systs_shape_corr[central_or_syst] = "%s_btagSF_shape_%s" % (self.collName,central_or_syst)
 
     def beginJob(self):
         # initialize BTagCalibrationReader
@@ -226,9 +256,11 @@ class btagSFProducer(Module):
 
     def beginFile(self, inputFile, outputFile, inputTree, wrappedOutputTree):
         self.out = wrappedOutputTree
-        for central_or_syst in self.branchNames_central_and_systs.values():
-            for branch in central_or_syst.values():
-                self.out.branch(branch, "F", lenVar="nJet")
+        if self.storeOutput:
+            for central_or_syst in self.central_and_systs:
+                self.out.branch(self.branchNames_central_and_systs[central_or_syst], "F", lenVar="n%s"%self.collName)
+            for central_or_syst in self.central_and_systs_shape_corr:
+                self.out.branch(self.branchNames_central_and_systs_shape_corr[central_or_syst], "F", lenVar="n%s"%self.collName)
 
     def endFile(self, inputFile, outputFile, inputTree, wrappedOutputTree):
         pass
@@ -281,10 +313,10 @@ class btagSFProducer(Module):
             # evaluate SF
             sf = None
             if shape_corr:
-                if is_relevant_syst_for_shape_corr(flavor_btv, syst, self.jesSystsForShape):
-                    sf = reader.eval_auto_bounds(syst, flavor_btv, eta, pt, discr)
+                if is_relevant_syst_for_shape_corr(flavor_btv, syst):
+                    sf = reader.eval_auto_bounds(syst, flavor_btv, abs(eta), pt, discr)
                 else:
-                    sf = reader.eval_auto_bounds('central', flavor_btv, eta, pt, discr)
+                    sf = reader.eval_auto_bounds('central', flavor_btv, abs(eta), pt, discr)
             else:
                 sf = reader.eval_auto_bounds(syst, flavor_btv, eta, pt)
             # check if SF is OK
@@ -297,7 +329,7 @@ class btagSFProducer(Module):
 
     def analyze(self, event):
         """process event, return True (go to next module) or False (fail, go to next event)"""
-        jets = Collection(event, "Jet")
+        jets = Collection(event, self.collName)
 
         discr = None
         if self.algo == "csvv2":
@@ -312,13 +344,23 @@ class btagSFProducer(Module):
             raise ValueError("ERROR: Invalid algorithm '%s'!" % self.algo)
 
         preloaded_jets = [(jet.pt, jet.eta, self.getFlavorBTV(jet.hadronFlavour), getattr(jet, discr)) for jet in jets]
-        for wp in self.selectedWPs:
-            reader = self.getReader(wp)
-            isShape = ( wp == 'shape_corr' )
-            central_and_systs = ( self.central_and_systs_shape_corr if isShape else self.central_and_systs )
-            for central_or_syst in central_and_systs:
-                scale_factors = list(self.getSFs(preloaded_jets, central_or_syst, reader, 'auto', isShape))
-                self.out.fillBranch(self.branchNames_central_and_systs[wp][central_or_syst], scale_factors)
+        reader = self.getReader('M', False)
+        for central_or_syst in self.central_and_systs:
+            central_or_syst = central_or_syst.lower()
+            scale_factors = list(self.getSFs(preloaded_jets, central_or_syst, reader, 'auto', False))
+            if self.storeOutput: 
+                self.out.fillBranch(self.branchNames_central_and_systs[central_or_syst], scale_factors)
+            else: 
+                setattr(event, self.branchNames_central_and_systs[central_or_syst], scale_factors)
+        # shape corrections
+        reader = self.getReader('shape_corr', True)
+        for central_or_syst in self.central_and_systs_shape_corr:
+            #central_or_syst = central_or_syst.lower()
+            scale_factors = list(self.getSFs(preloaded_jets, central_or_syst, reader, 'auto', True))
+            if self.storeOutput:
+                self.out.fillBranch(self.branchNames_central_and_systs_shape_corr[central_or_syst], scale_factors)
+            else: 
+                setattr(event, self.branchNames_central_and_systs_shape_corr[central_or_syst], scale_factors)
 
         return True
 
@@ -326,3 +368,6 @@ class btagSFProducer(Module):
 
 btagSF2016 = lambda : btagSFProducer("2016")
 btagSF2017 = lambda : btagSFProducer("2017")
+
+
+

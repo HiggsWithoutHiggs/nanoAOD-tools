@@ -77,7 +77,8 @@ class FullOutput(OutputTree):
             maxEntries=None,
             firstEntry=0,
             provenance=False,
-            jsonFilter=None
+            jsonFilter=None,
+            keepFriendLinks=False
     ):
         outputFile.cd()
 
@@ -119,10 +120,12 @@ class FullOutput(OutputTree):
                 print("Not copying unknown tree %s" % kn)
             else:
                 self._otherObjects[kn] = inputFile.Get(kn)
+        self._keepFriendLinks = False # detatch friend trees before saving to the output file, otherwise they remain linked
     def fill(self):
         self._inputTree.readAllBranches()
         self._tree.Fill()
     def write(self):
+        if not self._keepFriendLinks: self._unlinkFriends()
         if self.outputbranchSelection:
             self.outputbranchSelection.selectBranches(self._tree)
         self._tree = self.tree().CopyTree('1', "", self.maxEntries if self.maxEntries else ROOT.TVirtualTreePlayer.kMaxEntries, self.firstEntry)
@@ -132,6 +135,11 @@ class FullOutput(OutputTree):
             t.Write()
         for on,ov in self._otherObjects.items():
             self._file.WriteTObject(ov,on)
+    def _unlinkFriends(self):
+        friends = self._tree.GetListOfFriends() or []
+        while friends and friends.GetSize() > 0:
+            self._tree.RemoveFriend(friends.At(0).GetTree())
+            friends = self._tree.GetListOfFriends() or []
 
 class FriendOutput(OutputTree):
     def __init__(self, inputFile, inputTree, outputFile, treeName="Friends"):

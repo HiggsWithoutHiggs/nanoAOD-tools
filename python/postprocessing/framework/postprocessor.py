@@ -14,32 +14,33 @@ from PhysicsTools.NanoAODTools.postprocessing.framework.jobreport import JobRepo
 
 class PostProcessor :
     def __init__(self,outputDir,inputFiles,cut=None,branchsel=None,modules=[],compression="LZMA:9",friend=False,postfix=None,
-             jsonInput=None,noOut=False,justcount=False,provenance=False,haddFileName=None,fwkJobReport=False,histFileName=None,histDirName=None, outputbranchsel=None,maxEntries=None,firstEntry=0,
-                 prefetch=False,longTermCache=False):
-        self.outputDir=outputDir
-        self.inputFiles=inputFiles
-        self.cut=cut
-        self.modules=modules
-        self.compression=compression
-        self.postfix=postfix
-        self.json=jsonInput
-        self.noOut=noOut
-        self.friend=friend
-        self.justcount=justcount
-        self.provenance=provenance
-        self.jobReport = JobReport() if fwkJobReport else None
-        self.haddFileName=haddFileName
-        self.histFile = None
-        self.histDirName = None
-        if self.jobReport and not self.haddFileName :
-            print("Because you requested a FJR we assume you want the final hadd. No name specified for the output file, will use tree.root")
-            self.haddFileName="tree.root"
-        self.branchsel = BranchSelection(branchsel) if branchsel else None 
+		 jsonInput=None,noOut=False,justcount=False,provenance=False,haddFileName=None,fwkJobReport=False,histFileName=None,histDirName=None, outputbranchsel=None,maxEntries=None,firstEntry=0, saveSelectionElist=False,
+		 prefetch=False,longTermCache=False):
+	self.outputDir=outputDir
+	self.inputFiles=inputFiles
+	self.cut=cut
+	self.modules=modules
+	self.compression=compression
+	self.postfix=postfix
+	self.json=jsonInput
+	self.noOut=noOut
+	self.friend=friend
+	self.justcount=justcount
+	self.provenance=provenance
+	self.jobReport = JobReport() if fwkJobReport else None
+	self.haddFileName=haddFileName
+	self.histFile = None
+	self.histDirName = None
+	if self.jobReport and not self.haddFileName :
+		print "Because you requested a FJR we assume you want the final hadd. No name specified for the output file, will use tree.root"
+		self.haddFileName="tree.root"
+ 	self.branchsel = BranchSelection(branchsel) if branchsel else None 
         self.outputbranchsel = BranchSelection(outputbranchsel) if outputbranchsel else None
         self.histFileName=histFileName
         self.histDirName=histDirName
         self.maxEntries = maxEntries if maxEntries else 9223372036854775807 # 2^63 - 1, largest int64
         self.firstEntry = firstEntry
+        self.saveSelectionElist = saveSelectionElist
         self.prefetch = prefetch # prefetch files to TMPDIR using xrdcp
         self.longTermCache = longTermCache # keep cached files across runs (it's then up to you to clean up the temp)
     def prefetchFile(self, fname, verbose=True):
@@ -122,29 +123,29 @@ class PostProcessor :
                 inFile = ROOT.TFile.Open(ftoread)
             else:
                 inFile = ROOT.TFile.Open(fname)
-
-            #get input tree
-            inTree = inFile.Get("Events")
-            if inTree == None: inTree = inFile.Get("Friends")
-            nEntries = min(inTree.GetEntries() - self.firstEntry, self.maxEntries)
-            totEntriesRead+=nEntries
-            # pre-skimming
-            elist,jsonFilter = preSkim(inTree, self.json, self.cut, maxEntries = self.maxEntries, firstEntry = self.firstEntry)
-            if self.justcount:
-                print('Would select %d / %d entries from %s (%.2f%%)'%(elist.GetN() if elist else nEntries, nEntries, fname, (elist.GetN() if elist else nEntries)/(0.01*nEntries) if nEntries else 0))
-                if self.prefetch:
-                    if toBeDeleted: os.unlink(ftoread)
-                continue
-            else:
-                print('Pre-select %d entries out of %s (%.2f%%)'%(elist.GetN() if elist else nEntries,nEntries,(elist.GetN() if elist else nEntries)/(0.01*nEntries) if nEntries else 0))
-                inAddFiles = []
-                inAddTrees = []
-            for ffname in ffnames:
-                inAddFiles.append(ROOT.TFile.Open(ffname))
-                inAddTree = inAddFiles[-1].Get("Events")
-                if inAddTree == None: inAddTree = inAddFiles[-1].Get("Friends")
-                inAddTrees.append(inAddTree)
-                inTree.AddFriend(inAddTree)
+	    #get input tree
+	    inTree = inFile.Get("Events")
+	    if inTree == None: inTree = inFile.Get("Friends")
+	    nEntries = min(inTree.GetEntries() - self.firstEntry, self.maxEntries)
+	    totEntriesRead+=nEntries
+	    # attach the friends
+	    inAddFiles = []
+	    inAddTrees = []
+	    for ffname in ffnames:
+		inAddFiles.append(ROOT.TFile.Open(ffname))
+		inAddTree = inAddFiles[-1].Get("Events")
+		if inAddTree == None: inAddTree = inAddFiles[-1].Get("Friends")
+		inAddTrees.append(inAddTree)
+		inTree.AddFriend(inAddTree)
+	    # pre-skimming
+	    elist,jsonFilter = preSkim(inTree, self.json, self.cut, maxEntries = self.maxEntries, firstEntry = self.firstEntry)
+	    if self.justcount:
+		print 'Would select %d / %d entries from %s (%.2f%%)'%(elist.GetN() if elist else nEntries, nEntries, fname, (elist.GetN() if elist else nEntries)/(0.01*nEntries) if nEntries else 0)
+		if self.prefetch:
+		    if toBeDeleted: os.unlink(ftoread)
+		continue
+	    else:
+		print 'Pre-select %d entries out of %s (%.2f%%)'%(elist.GetN() if elist else nEntries,nEntries,(elist.GetN() if elist else nEntries)/(0.01*nEntries) if nEntries else 0)
 
             if fullClone:
                 # no need of a reader (no event loop), but set up the elist if available
@@ -175,6 +176,8 @@ class PostProcessor :
                         firstEntry=self.firstEntry,
                         jsonFilter=jsonFilter,
                         provenance=self.provenance)
+                if elist and self.saveSelectionElist:
+                    outFile.WriteTObject(elist, self.saveSelectionElist)
             else : 
                 outFile = None
                 outTree = None
@@ -194,6 +197,7 @@ class PostProcessor :
             # now write the output
             if not self.noOut: 
                 outTree.write()
+                inFile.Close() # important to do this before
                 outFile.Close()
                 print("Done %s" % outFileName)
             if self.jobReport:
