@@ -6,7 +6,7 @@ ROOT.PyConfig.IgnoreCommandLineOptions = True
 from importlib import import_module
 from PhysicsTools.NanoAODTools.postprocessing.framework.postprocessor import PostProcessor
 
-DEFAULT_MODULES = [("PhysicsTools.NanoAODTools.postprocessing.modules.gen.genFriendProducer", "genFriends")]
+DEFAULT_MODULES = []
 
 if __name__ == "__main__":
     from optparse import OptionParser
